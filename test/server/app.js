@@ -15,13 +15,23 @@ var
     oauth20     = require('./oauth20.js')(TYPE),
     model       = require('./model/' + TYPE);
 
-server.use(express.static(path.join(__dirname, 'public')));
 // Middleware
 server.use(cookieParser());
 server.use(session({ secret: 'oauth20-provider-test-server', resave: false, saveUninitialized: false }));
 server.use(bodyParser.urlencoded({extended: false}));
 server.use(bodyParser.json());
 server.use(oauth20.inject());
+server.use(express.static(path.join(__dirname, 'public')));
+
+// CORS (Cross-Origin Resource Sharing) headers to support Cross-site HTTP requests
+
+server.all('/*', function(req, res, next) {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Headers", "X-Requested-With");
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    res.header('Access-Control-Allow-Headers', 'Authorization');
+    next();
+});
 
 // View
 server.set('views', './view');
@@ -37,8 +47,6 @@ function isUserAuthorized(req, res, next) {
     }
 };
 
-
-
 // Define OAuth2 Authorization Endpoint
 server.get('/authorization', isUserAuthorized, oauth20.controller.authorization, function(req, res) {
     res.render('authorization', { layout: false });
@@ -51,6 +59,49 @@ server.post('/token', oauth20.controller.token);
 // Define user login routes
 server.get('/login', function(req, res) {
     res.render('login', {layout: false});
+});
+
+server.get('/reg', function(req, res) {
+    res.render('registration2', { title: 'Reg me' });
+});
+
+// dummy db
+var dummyDb = [
+    {username: 'john', email: 'john@email.com'},
+    {username: 'jack', email: 'jack@email.com'},
+    {username: 'jim', email: 'jim@email.com'},
+];
+
+server.post('/signup/check/username', function(req, res) {
+    var username = req.body.username;
+    // check if username contains non-url-safe characters
+    if (username !== encodeURIComponent(username)) {
+        res.json(403, {
+            invalidChars: true
+        });
+        return;
+    }
+    // check if username is already taken - query your db here
+    var usernameTaken = false;
+    model.oauth2.user.fetchByUsername(req.body.username, function(err, user) {
+        if (user) {
+            usernameTaken = true;
+        }
+    });
+    //for (var i = 0; i < dummyDb.length; i++) {
+    //    if (dummyDb[i].username === username) {
+    //        usernameTaken = true;
+    //        break;
+    //    }
+    //}
+    if (usernameTaken) {
+        res.json(403, {
+            isTaken: true
+        });
+        return
+    }
+    // looks like everything is fine
+    res.send(200);
 });
 
 
@@ -87,7 +138,7 @@ server.post('/login', function(req, res, next) {
 server.get('/secure', oauth20.middleware.bearer, function(req, res) {
     if (!req.oauth2.accessToken) return res.status(403).send('Forbidden');
     if (!req.oauth2.accessToken.userId) return res.status(403).send('Forbidden');
-    res.send('Hi! Dear user ' + req.oauth2.accessToken.userId + '!');
+    res.send('Hi! Dear user ' + req.oauth2.accessToken.note + '!');
 });
 
 // Some secure client method
